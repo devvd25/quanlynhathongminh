@@ -1,7 +1,8 @@
 /**
  * Screen: DashboardScreen (Màn hình chính)
- * Tích hợp toàn bộ Header, Cảm biến môi trường (DHT22, Đất),
+ * Tích hợp Header, Cảm biến môi trường (DHT22, Đất),
  * Thiết bị điều khiển (LED, Relay) và Cửa thông minh (HC-SR04, Servo).
+ * Sẵn sàng kết nối Wokwi và Backend.
  */
 
 import React, { useState } from 'react';
@@ -13,20 +14,28 @@ import {
   RefreshControl,
   TouchableOpacity,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { HeaderStatus } from '../components/HeaderStatus';
 import { SensorCards } from '../components/SensorCard';
 import { DeviceControlCards } from '../components/DeviceControlCard';
 import { DoorStatusCard } from '../components/DoorStatusCard';
 import { useSmartHome } from '../hooks/useSmartHome';
+import { useAuth } from '../hooks/useAuth';
 import { ThemeColors, Radii, Spacing } from '../constants/theme';
 
 interface DashboardScreenProps {
   smartHome: ReturnType<typeof useSmartHome>;
+  auth: ReturnType<typeof useAuth>;
   theme: ThemeColors;
+  onNavigateProfile?: () => void;
 }
 
-export const DashboardScreen: React.FC<DashboardScreenProps> = ({ smartHome, theme }) => {
+export const DashboardScreen: React.FC<DashboardScreenProps> = ({
+  smartHome,
+  auth,
+  theme,
+  onNavigateProfile,
+}) => {
   const {
     connection,
     sensors,
@@ -45,7 +54,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ smartHome, the
 
   const [activeRoomTab, setActiveRoomTab] = useState<'all' | 'living' | 'garden' | 'gate'>('all');
 
-  // Đếm số thiết bị đang bật
   const activeDevicesCount =
     (actuators.led.state === 'ON' ? 1 : 0) +
     (actuators.relay.state === 'ON' ? 1 : 0) +
@@ -68,14 +76,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ smartHome, the
       {/* 1. HEADER & OLED BADGE */}
       <HeaderStatus
         connection={connection}
+        user={auth.user}
         theme={theme}
         isDarkMode={isDarkMode}
         isRefreshing={isRefreshing}
         onReconnect={reconnect}
         onToggleTheme={toggleTheme}
+        onProfilePress={onNavigateProfile}
       />
 
-      {/* 2. SUMMARY PILLS (Phong cách ảnh mẫu: Số thiết bị bật, Nhiệt độ, An toàn) */}
+      {/* 2. SUMMARY PILLS (Đồng bộ phong cách ảnh mẫu) */}
       <View style={styles.pillsRow}>
         <View
           style={[
@@ -88,7 +98,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ smartHome, the
           </View>
           <View>
             <Text style={[styles.pillValue, { color: theme.textPrimary }]}>{activeDevicesCount} Thiết bị</Text>
-            <Text style={[styles.pillLabel, { color: theme.textMuted }]}>Đang hoạt động</Text>
+            <Text style={[styles.pillLabel, { color: theme.textMuted }]}>Đang kích hoạt</Text>
           </View>
         </View>
 
@@ -103,7 +113,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ smartHome, the
           </View>
           <View>
             <Text style={[styles.pillValue, { color: theme.textPrimary }]}>
-              {sensors.dht22.temperature.toFixed(0)}°C
+              {sensors.dht22.temperature !== null ? `${sensors.dht22.temperature.toFixed(1)}°C` : '--.-°C'}
             </Text>
             <Text style={[styles.pillLabel, { color: theme.textMuted }]}>Nhiệt độ phòng</Text>
           </View>
@@ -119,8 +129,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ smartHome, the
             <Ionicons name="shield-checkmark-outline" size={14} color={theme.info} />
           </View>
           <View>
-            <Text style={[styles.pillValue, { color: theme.textPrimary }]}>An toàn</Text>
-            <Text style={[styles.pillLabel, { color: theme.textMuted }]}>Hệ thống OK</Text>
+            <Text style={[styles.pillValue, { color: theme.textPrimary }]}>
+              {sensors.isLive ? 'Live Wokwi' : 'Sẵn sàng'}
+            </Text>
+            <Text style={[styles.pillLabel, { color: theme.textMuted }]}>
+              {connection.broker === 'connected' ? 'HiveMQ OK' : 'Standby'}
+            </Text>
           </View>
         </View>
       </View>
@@ -129,9 +143,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ smartHome, the
       <View style={styles.roomFilterRow}>
         {[
           { key: 'all', label: 'Tất cả' },
-          { key: 'living', label: 'Phòng khách' },
-          { key: 'garden', label: 'Sân vườn' },
-          { key: 'gate', label: 'Cổng chính' },
+          { key: 'living', label: 'Phòng khách (Pin 2, 4)' },
+          { key: 'garden', label: 'Sân vườn (Pin 23, 34)' },
+          { key: 'gate', label: 'Cổng chính (Pin 5, 18, 19)' },
         ].map((tab) => {
           const isSelected = activeRoomTab === tab.key;
           return (
@@ -174,7 +188,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ smartHome, the
         onUpdateRelayConfig={updateRelayConfig}
       />
 
-      {/* 6. DOOR & SECURITY (HC-SR04 & Động cơ Servo) */}
+      {/* 6. CỬA THÔNG MINH & AN NINH (HC-SR04 & Động cơ Servo) */}
       <DoorStatusCard
         door={actuators.door}
         ultrasonic={sensors.ultrasonic}
@@ -236,12 +250,12 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   roomChip: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: Radii.full,
     borderWidth: 1,
   },
   roomChipText: {
-    fontSize: 12,
+    fontSize: 11,
   },
 });

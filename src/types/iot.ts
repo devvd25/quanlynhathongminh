@@ -1,46 +1,49 @@
 /**
  * IoT Smart Home Type Definitions
- * Chuẩn hóa cấu trúc dữ liệu giao tiếp với ESP32 qua HiveMQ MQTT
+ * Chuẩn hóa cấu trúc dữ liệu giao tiếp với ESP32 / Wokwi qua HiveMQ MQTT & Backend
  */
 
-export type ConnectionState = 'connected' | 'disconnected' | 'connecting' | 'error';
+export type ConnectionState = 'connected' | 'disconnected' | 'connecting' | 'standby' | 'error';
 export type DeviceState = 'ON' | 'OFF';
-export type SoilStatus = 'dry' | 'optimal' | 'wet';
+export type SoilStatus = 'dry' | 'optimal' | 'wet' | 'unknown';
 export type RelayDeviceType = 'pump' | 'fan' | 'heater' | 'appliance' | 'custom';
 
 export interface IotConnectionStatus {
-  esp32: ConnectionState;
-  broker: ConnectionState;
-  wifiRssi: number; // dBm (e.g. -62 dBm)
-  ipAddress: string;
-  pingMs: number;
+  esp32: ConnectionState;       // Trạng thái mạch ESP32 / Wokwi
+  broker: ConnectionState;      // Trạng thái HiveMQ MQTT Broker
+  backend: ConnectionState;     // Trạng thái Backend Server (FastAPI / Node.js)
+  wifiRssi: number | null;      // dBm
+  ipAddress: string | null;
+  pingMs: number | null;
   lastSeen: string;
+  source: 'wokwi' | 'hardware' | 'none';
 }
 
 export interface Dht22Data {
-  temperature: number; // Celsius, VD: 24.5
-  humidity: number;    // %, VD: 65.2
-  heatIndex?: number;  // Chỉ số cảm nhận nhiệt
+  temperature: number | null; // Celsius (null khi chờ Wokwi kết nối)
+  humidity: number | null;    // %
+  heatIndex?: number | null;
 }
 
 export interface SoilMoistureData {
-  percentage: number;  // 0 - 100%
-  rawValue: number;    // Giá trị ADC (0 - 4095 của ESP32)
-  status: SoilStatus;  // 'dry' | 'optimal' | 'wet'
-  statusText: string;  // "Khô - Cần tưới" | "Đủ ẩm" | "Rất ẩm"
+  percentage: number | null;  // 0 - 100%
+  rawValue: number | null;    // Giá trị ADC (0 - 4095)
+  status: SoilStatus;
+  statusText: string;         // "Chờ kết nối..." | "Đủ ẩm" | "Khô - Cần tưới"
 }
 
 export interface UltrasonicData {
-  distanceCm: number;  // Khoảng cách đo được (cm)
-  objectDetected: boolean; // True nếu <= threshold
-  threshold: number;   // Ngưỡng phát hiện (mặc định 50cm)
+  distanceCm: number | null;  // Khoảng cách đo được (cm)
+  objectDetected: boolean;
+  threshold: number;          // Mặc định 50cm
 }
 
 export interface EnvironmentSensors {
   dht22: Dht22Data;
   soil: SoilMoistureData;
   ultrasonic: UltrasonicData;
-  timestamp: number;
+  timestamp: number | null;
+  isLive: boolean; // false = đang chờ dữ liệu từ Wokwi / Backend
 }
 
 export interface LedActuator {
@@ -49,6 +52,7 @@ export interface LedActuator {
   state: DeviceState;
   brightness: number;  // 0 - 100
   isPending: boolean;  // Optimistic UI pending state
+  gpioPin?: number;
   lastUpdated: string;
 }
 
@@ -59,6 +63,7 @@ export interface RelayActuator {
   state: DeviceState;
   isPending: boolean;
   powerWatts: number;
+  gpioPin?: number;
   lastUpdated: string;
 }
 
@@ -68,6 +73,7 @@ export interface DoorServoActuator {
   isAutoMode: boolean;     // Chế độ tự động theo cảm biến siêu âm (< 50cm)
   isOverride: boolean;     // Mở khẩn cấp từ xa
   isPending: boolean;
+  gpioPin?: number;
   lastUpdated: string;
 }
 
@@ -93,7 +99,8 @@ export interface MqttBrokerConfig {
   password?: string;
   ssl: boolean;
   topicPrefix: string;
-  isSimulation: boolean;
+  backendApiUrl: string;
+  wokwiProjectId?: string;
 }
 
 export interface SensorHistoryPoint {
@@ -112,4 +119,27 @@ export interface SmartHomeState {
   automation: AutomationConfig;
   config: MqttBrokerConfig;
   history: SensorHistoryPoint[];
+}
+
+// ================= ADMIN DÀNH CHO QUẢN LÝ THIẾT BỊ & WOKWI =================
+
+export interface ManagedIotDevice {
+  id: string;
+  name: string;
+  type: 'sensor' | 'actuator';
+  category: 'dht22' | 'soil' | 'ultrasonic' | 'led' | 'relay' | 'servo';
+  gpioPin: number;
+  mqttTopic: string;
+  status: 'online' | 'offline' | 'standby';
+  description: string;
+  lastReported?: string;
+}
+
+export interface SystemAuditLog {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warning' | 'error' | 'security';
+  actor: string;
+  message: string;
+  source: 'ESP32' | 'Wokwi' | 'MobileApp' | 'Backend';
 }

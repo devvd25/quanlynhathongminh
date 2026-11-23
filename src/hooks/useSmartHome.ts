@@ -1,65 +1,69 @@
 /**
  * Custom Hook: useSmartHome
- * Quản lý tập trung toàn bộ State, Optimistic UI và giao tiếp với Service Layer.
+ * Quản lý tập trung State phần cứng ESP32 / Wokwi và HiveMQ Broker.
+ * ĐÃ LOẠI BỎ MOCK TIMER GIẢ LẬP - SẴN SÀNG NHẬN DATA THẬT.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  SmartHomeState,
   IotConnectionStatus,
   EnvironmentSensors,
   ActuatorDevices,
   SensorHistoryPoint,
   AutomationConfig,
-  MqttBrokerConfig,
   RelayDeviceType,
 } from '../types/iot';
 import { smartHomeService } from '../services/mqttService';
 
 const INITIAL_AUTOMATION: AutomationConfig = {
   autoWateringEnabled: true,
-  soilMoistureThreshold: 35, // Dưới 35% tự động kích hoạt máy bơm tưới
+  soilMoistureThreshold: 35,
   autoDoorEnabled: true,
-  doorDistanceThreshold: 50,  // Dưới 50cm tự động mở cửa
+  doorDistanceThreshold: 50,
 };
 
 export const useSmartHome = () => {
-  // 1. Connection State
+  // Trạng thái kết nối (Khởi đầu ở chế độ Standby sẵn sàng kết nối)
   const [connection, setConnection] = useState<IotConnectionStatus>({
-    esp32: 'connected',
-    broker: 'connected',
-    wifiRssi: -60,
-    ipAddress: '192.168.1.188',
-    pingMs: 35,
-    lastSeen: 'Vừa xong',
+    esp32: 'standby',
+    broker: 'standby',
+    backend: 'standby',
+    wifiRssi: null,
+    ipAddress: null,
+    pingMs: null,
+    lastSeen: 'Chờ kết nối Wokwi...',
+    source: 'none',
   });
 
-  // 2. Sensor State
+  // Cảm biến môi trường (null khi chưa có dữ liệu từ Wokwi / ESP32)
   const [sensors, setSensors] = useState<EnvironmentSensors>({
-    dht22: { temperature: 26.5, humidity: 58.0, heatIndex: 27.0 },
-    soil: { percentage: 75, rawValue: 3075, status: 'optimal', statusText: 'Đủ ẩm' },
-    ultrasonic: { distanceCm: 120, objectDetected: false, threshold: 50 },
-    timestamp: Date.now(),
+    dht22: { temperature: null, humidity: null, heatIndex: null },
+    soil: { percentage: null, rawValue: null, status: 'unknown', statusText: 'Chờ kết nối Wokwi...' },
+    ultrasonic: { distanceCm: null, objectDetected: false, threshold: 50 },
+    timestamp: null,
+    isLive: false,
   });
 
-  // 3. Actuator State
+  // Thiết bị điều khiển
   const [actuators, setActuators] = useState<ActuatorDevices>({
     led: {
-      id: 'led_living_room',
-      name: 'Đèn chiếu sáng chính',
-      state: 'ON',
-      brightness: 80,
+      id: 'led_main',
+      name: 'Đèn chiếu sáng (Pin 2)',
+      state: 'OFF',
+      brightness: 100,
       isPending: false,
-      lastUpdated: '09:30',
+      gpioPin: 2,
+      lastUpdated: 'Chờ kết nối',
     },
     relay: {
       id: 'relay_pump',
-      name: 'Máy bơm tưới cây',
+      name: 'Máy bơm tưới cây (Pin 23)',
       deviceType: 'pump',
       state: 'OFF',
       isPending: false,
       powerWatts: 0,
-      lastUpdated: '09:28',
+      gpioPin: 23,
+      lastUpdated: 'Chờ kết nối',
     },
     door: {
       angle: 0,
@@ -67,84 +71,41 @@ export const useSmartHome = () => {
       isAutoMode: true,
       isOverride: false,
       isPending: false,
-      lastUpdated: '09:25',
+      gpioPin: 19,
+      lastUpdated: 'Chờ kết nối',
     },
   });
 
-  // 4. Automation & Config State
   const [automation, setAutomation] = useState<AutomationConfig>(INITIAL_AUTOMATION);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [history, setHistory] = useState<SensorHistoryPoint[]>([]);
 
-  // 5. Historical Data Buffer (dành cho Analytics & Biểu đồ)
-  const [history, setHistory] = useState<SensorHistoryPoint[]>(() => {
-    // Khởi tạo một số điểm mẫu đẹp mắt ban đầu
-    const points: SensorHistoryPoint[] = [];
-    const now = Date.now();
-    for (let i = 6; i >= 0; i--) {
-      const time = new Date(now - i * 5 * 60 * 1000);
-      points.push({
-        timestamp: time.toISOString(),
-        timeLabel: time.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        temperature: 25.5 + Math.sin(i) * 1.5,
-        humidity: 60 + Math.cos(i) * 4,
-        soilMoisture: 72 + (i % 3) * 2,
-        distance: 110 + (i % 2) * 15,
-      });
-    }
-    return points;
-  });
-
-  // Ref giữ automation config để check auto watering không bị stale closure
-  const automationRef = useRef(automation);
-  useEffect(() => {
-    automationRef.current = automation;
-  }, [automation]);
-
-  // Lắng nghe cập nhật từ Service
+  // Lắng nghe cập nhật từ SmartHome IoT Service (khi Wokwi/Backend/HiveMQ gửi data tới)
   useEffect(() => {
     const unsubSensors = smartHomeService.onSensorsUpdate((newSensors) => {
       setSensors(newSensors);
 
-      // Cập nhật lịch sử (giới hạn tối đa 20 điểm)
-      setHistory((prev) => {
-        const now = new Date();
-        const newPoint: SensorHistoryPoint = {
-          timestamp: now.toISOString(),
-          timeLabel: now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          temperature: newSensors.dht22.temperature,
-          humidity: newSensors.dht22.humidity,
-          soilMoisture: newSensors.soil.percentage,
-          distance: newSensors.ultrasonic.distanceCm,
-        };
-        const next = [...prev, newPoint];
-        if (next.length > 20) next.shift();
-        return next;
-      });
-
-      // Tự động kích hoạt quy tắc: nếu độ ẩm đất < ngưỡng cấu hình -> Tự bật máy bơm tưới
-      if (
-        automationRef.current.autoWateringEnabled &&
-        newSensors.soil.percentage < automationRef.current.soilMoistureThreshold
-      ) {
-        setActuators((current) => {
-          if (current.relay.state === 'OFF' && !current.relay.isPending) {
-            smartHomeService.setRelay('ON');
-            return {
-              ...current,
-              relay: { ...current.relay, state: 'ON', powerWatts: 75 },
-            };
-          }
-          return current;
+      if (newSensors.isLive && newSensors.dht22.temperature != null) {
+        setHistory((prev) => {
+          const now = new Date();
+          const newPoint: SensorHistoryPoint = {
+            timestamp: now.toISOString(),
+            timeLabel: now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            temperature: newSensors.dht22.temperature!,
+            humidity: newSensors.dht22.humidity || 0,
+            soilMoisture: newSensors.soil.percentage || 0,
+            distance: newSensors.ultrasonic.distanceCm || 0,
+          };
+          const next = [...prev, newPoint];
+          if (next.length > 20) next.shift();
+          return next;
         });
       }
     });
 
     const unsubActuators = smartHomeService.onActuatorsUpdate((newActuators) => {
-      setActuators((prev) => ({
-        ...prev,
-        ...newActuators,
-      }));
+      setActuators((prev) => ({ ...prev, ...newActuators }));
     });
 
     const unsubStatus = smartHomeService.onStatusUpdate((newStatus) => {
@@ -158,152 +119,65 @@ export const useSmartHome = () => {
     };
   }, []);
 
-  // ===================== ACTION DISPATCHERS (OPTIMISTIC UI) =====================
-
-  /**
-   * Bật / Tắt Đèn LED (Phản hồi tức thì Optimistic UI)
-   */
+  // Điều khiển Đèn LED
   const toggleLed = useCallback(async () => {
     const nextState = actuators.led.state === 'ON' ? 'OFF' : 'ON';
-
-    // 1. Cập nhật UI ngay lập tức
     setActuators((prev) => ({
       ...prev,
-      led: {
-        ...prev.led,
-        state: nextState,
-        isPending: true,
-      },
+      led: { ...prev.led, state: nextState, isPending: true },
     }));
-
-    try {
-      // 2. Gửi lệnh qua MQTT Service
-      await smartHomeService.setLed(nextState);
-    } catch (err) {
-      // Rollback nếu có lỗi
-      setActuators((prev) => ({
-        ...prev,
-        led: {
-          ...prev.led,
-          state: prev.led.state === 'ON' ? 'OFF' : 'ON',
-          isPending: false,
-        },
-      }));
-    } finally {
-      setActuators((prev) => ({
-        ...prev,
-        led: { ...prev.led, isPending: false },
-      }));
-    }
+    await smartHomeService.setLed(nextState);
+    setActuators((prev) => ({ ...prev, led: { ...prev.led, isPending: false } }));
   }, [actuators.led.state]);
 
-  /**
-   * Điều chỉnh độ sáng đèn LED (0 - 100%)
-   */
   const setLedBrightness = useCallback(async (brightness: number) => {
-    setActuators((prev) => ({
-      ...prev,
-      led: { ...prev.led, brightness },
-    }));
+    setActuators((prev) => ({ ...prev, led: { ...prev.led, brightness } }));
     await smartHomeService.setLed(actuators.led.state, brightness);
   }, [actuators.led.state]);
 
-  /**
-   * Bật / Tắt Rơ-le (Máy bơm / Thiết bị công suất)
-   */
+  // Điều khiển Rơ-le (Máy bơm / Quạt)
   const toggleRelay = useCallback(async () => {
     const nextState = actuators.relay.state === 'ON' ? 'OFF' : 'ON';
     const watts = nextState === 'ON' ? (actuators.relay.deviceType === 'pump' ? 75 : 45) : 0;
-
-    // Optimistic Update
     setActuators((prev) => ({
       ...prev,
-      relay: {
-        ...prev.relay,
-        state: nextState,
-        powerWatts: watts,
-        isPending: true,
-      },
+      relay: { ...prev.relay, state: nextState, powerWatts: watts, isPending: true },
     }));
-
-    try {
-      await smartHomeService.setRelay(nextState);
-    } catch (err) {
-      setActuators((prev) => ({
-        ...prev,
-        relay: {
-          ...prev.relay,
-          state: prev.relay.state === 'ON' ? 'OFF' : 'ON',
-          isPending: false,
-        },
-      }));
-    } finally {
-      setActuators((prev) => ({
-        ...prev,
-        relay: { ...prev.relay, isPending: false },
-      }));
-    }
+    await smartHomeService.setRelay(nextState);
+    setActuators((prev) => ({ ...prev, relay: { ...prev.relay, isPending: false } }));
   }, [actuators.relay.state, actuators.relay.deviceType]);
 
-  /**
-   * Đổi loại thiết bị Rơ-le (VD: từ Quạt sang Máy bơm tưới cây)
-   */
   const updateRelayConfig = useCallback((deviceType: RelayDeviceType, name: string) => {
     setActuators((prev) => ({
       ...prev,
-      relay: {
-        ...prev.relay,
-        deviceType,
-        name,
-      },
+      relay: { ...prev.relay, deviceType, name },
     }));
   }, []);
 
-  /**
-   * Mở khẩn cấp từ xa (Override Servo 90°)
-   */
+  // Điều khiển Cửa Servo & Override
   const toggleDoorOverride = useCallback(async () => {
     const nextOverride = !actuators.door.isOverride;
     const targetAngle = nextOverride ? 90 : 0;
-    const targetIsOpen = targetAngle === 90;
-
     setActuators((prev) => ({
       ...prev,
       door: {
         ...prev.door,
         isOverride: nextOverride,
-        isOpen: targetIsOpen,
+        isOpen: targetAngle === 90,
         angle: targetAngle,
         isPending: true,
       },
     }));
-
-    try {
-      await smartHomeService.setDoor(targetAngle, nextOverride);
-    } catch (err) {
-      // rollback
-    } finally {
-      setActuators((prev) => ({
-        ...prev,
-        door: { ...prev.door, isPending: false },
-      }));
-    }
+    await smartHomeService.setDoor(targetAngle, nextOverride);
+    setActuators((prev) => ({ ...prev, door: { ...prev.door, isPending: false } }));
   }, [actuators.door.isOverride]);
 
-  /**
-   * Bật/Tắt chế độ mở cửa tự động theo cảm biến siêu âm
-   */
   const setDoorAutoMode = useCallback(async (enabled: boolean) => {
-    setActuators((prev) => ({
-      ...prev,
-      door: { ...prev.door, isAutoMode: enabled },
-    }));
+    setActuators((prev) => ({ ...prev, door: { ...prev.door, isAutoMode: enabled } }));
     await smartHomeService.setDoorAutoMode(enabled);
   }, []);
 
-  /**
-   * Tải lại / Kết nối lại HiveMQ & ESP32
-   */
+  // Nút Kết nối lại / Thử kết nối Wokwi & HiveMQ
   const reconnect = useCallback(async () => {
     setIsRefreshing(true);
     await smartHomeService.connect();
@@ -312,9 +186,6 @@ export const useSmartHome = () => {
     }, 600);
   }, []);
 
-  /**
-   * Cập nhật quy tắc tự động hóa
-   */
   const updateAutomationConfig = useCallback((config: Partial<AutomationConfig>) => {
     setAutomation((prev) => ({ ...prev, ...config }));
   }, []);
@@ -331,7 +202,6 @@ export const useSmartHome = () => {
     history,
     isRefreshing,
     isDarkMode,
-    isSimulation: smartHomeService.isSimulated(),
     toggleLed,
     setLedBrightness,
     toggleRelay,
@@ -341,6 +211,5 @@ export const useSmartHome = () => {
     reconnect,
     updateAutomationConfig,
     toggleTheme,
-    setSimulationMode: (val: boolean) => smartHomeService.setSimulationMode(val),
   };
 };

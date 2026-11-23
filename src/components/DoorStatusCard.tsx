@@ -2,13 +2,13 @@
  * Component: DoorStatusCard (Khu vực Giám sát & Điều khiển Cửa thông minh)
  * Kết hợp Cảm biến siêu âm HC-SR04 & Động cơ Servo 180°:
  * 1. Hiển thị góc quay cửa (0° Đóng - 90° Mở)
- * 2. Đo khoảng cách vật cản siêu âm (Radar đo khoảng cách cm)
+ * 2. Đo khoảng cách vật cản siêu âm HC-SR04 (Trig Pin 5, Echo Pin 18)
  * 3. Badge "Chế độ Tự động (< 50cm)" + Nút gạt "Mở khẩn cấp từ xa" (Override)
  */
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, ActivityIndicator } from 'react-native';
-import { MaterialCommunityIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { DoorServoActuator, UltrasonicData } from '../types/iot';
 import { ThemeColors, Radii, Spacing } from '../constants/theme';
 
@@ -27,17 +27,21 @@ export const DoorStatusCard: React.FC<DoorStatusCardProps> = ({
   onToggleOverride,
   onToggleAutoMode,
 }) => {
-  const isNear = ultrasonic.objectDetected; // distance <= 50cm
+  const hasDistance = ultrasonic.distanceCm !== null;
+  const isNear = hasDistance && ultrasonic.objectDetected;
   const isOpen = door.isOpen || door.angle >= 45;
 
-  // Thanh đo khoảng cách (scale 0 - 200cm)
-  const distanceBarPercent = Math.min(100, Math.max(5, (ultrasonic.distanceCm / 200) * 100));
+  const distanceBarPercent = hasDistance
+    ? Math.min(100, Math.max(5, (ultrasonic.distanceCm! / 200) * 100))
+    : 0;
 
   return (
     <View style={styles.container}>
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Cửa thông minh & An ninh</Text>
-        <Text style={[styles.sectionSubtitle, { color: theme.textMuted }]}>HC-SR04 + Servo</Text>
+        <Text style={[styles.sectionSubtitle, { color: theme.textMuted }]}>
+          HC-SR04 (Pin 5/18) + Servo (Pin 19)
+        </Text>
       </View>
 
       <View
@@ -69,7 +73,9 @@ export const DoorStatusCard: React.FC<DoorStatusCardProps> = ({
               />
             </View>
             <View>
-              <Text style={[styles.doorTitle, { color: theme.textPrimary }]}>Cửa chính ra vào</Text>
+              <Text style={[styles.doorTitle, { color: theme.textPrimary }]}>
+                Cổng chính ra vào (Servo Pin 19)
+              </Text>
               <View style={styles.servoAngleRow}>
                 <View
                   style={[
@@ -112,12 +118,12 @@ export const DoorStatusCard: React.FC<DoorStatusCardProps> = ({
                 { color: door.isAutoMode ? theme.primary : theme.textMuted },
               ]}
             >
-              {door.isAutoMode ? 'Tự động (< 50cm)' : 'Chế độ Thủ công'}
+              {door.isAutoMode ? 'Tự động (< 50cm)' : 'Thủ công'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Phần 2: Cảm biến siêu âm HC-SR04 (Radar đo khoảng cách) */}
+        {/* Phần 2: Cảm biến siêu âm HC-SR04 */}
         <View
           style={[
             styles.radarBox,
@@ -135,7 +141,7 @@ export const DoorStatusCard: React.FC<DoorStatusCardProps> = ({
                 color={isNear ? theme.primary : theme.textSecondary}
               />
               <Text style={[styles.radarLabel, { color: theme.textSecondary }]}>
-                Cảm biến siêu âm HC-SR04
+                Khoảng cách vật cản (HC-SR04)
               </Text>
             </View>
             <Text
@@ -144,7 +150,7 @@ export const DoorStatusCard: React.FC<DoorStatusCardProps> = ({
                 { color: isNear ? theme.primary : theme.textPrimary },
               ]}
             >
-              {ultrasonic.distanceCm} cm
+              {hasDistance ? `${ultrasonic.distanceCm} cm` : '-- cm'}
             </Text>
           </View>
 
@@ -165,9 +171,11 @@ export const DoorStatusCard: React.FC<DoorStatusCardProps> = ({
 
           <View style={styles.radarFooter}>
             <Text style={[styles.radarFooterText, { color: theme.textMuted }]}>
-              {isNear
-                ? '⚠️ Phát hiện vật cản gần (< 50cm) - Đang kích hoạt mở cửa'
-                : 'Khu vực an toàn, không có người trong phạm vi 50cm'}
+              {hasDistance
+                ? isNear
+                  ? '⚠️ Phát hiện người lại gần (< 50cm) - Sẵn sàng kích hoạt mở cửa'
+                  : 'An toàn, không có người trong phạm vi 50cm'
+                : 'Chờ nhận tín hiệu siêu âm từ Wokwi / ESP32...'}
             </Text>
           </View>
         </View>
@@ -253,7 +261,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   doorTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     marginBottom: 2,
   },

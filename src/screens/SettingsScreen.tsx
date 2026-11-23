@@ -2,7 +2,7 @@
  * Screen: SettingsScreen (Cài đặt & Cấu hình)
  * 1. Form cấu hình HiveMQ Broker (Host, Port, Topic Prefix)
  * 2. Cấu hình Quy tắc Tự động hóa (Ngưỡng tưới đất, Ngưỡng mở cửa)
- * 3. Chuyển đổi giữa Chế độ Giả lập và Kết nối ESP32 thật
+ * 3. Trạng thái kết nối Wokwi ESP32 & Backend
  */
 
 import React, { useState } from 'react';
@@ -28,10 +28,9 @@ interface SettingsScreenProps {
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ smartHome, theme }) => {
   const {
+    connection,
     automation,
     updateAutomationConfig,
-    isSimulation,
-    setSimulationMode,
     reconnect,
   } = smartHome;
 
@@ -71,11 +70,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ smartHome, theme
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.textPrimary }]}>Cài đặt & Cấu hình</Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Quản lý kết nối MQTT Broker và Ngưỡng tự động hóa phần cứng
+          Quản lý kết nối MQTT Broker và Ngưỡng tự động hóa phần cứng Wokwi
         </Text>
       </View>
 
-      {/* CHẾ ĐỘ MÔ PHỎNG / THỰC TẾ */}
+      {/* TRẠNG THÁI WOKWI / ESP32 */}
       <View
         style={[
           styles.sectionCard,
@@ -87,18 +86,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ smartHome, theme
             <MaterialCommunityIcons name="chip" size={20} color={theme.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>Chế độ Hoạt động</Text>
+            <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>Phần cứng Wokwi ESP32</Text>
             <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]}>
-              {isSimulation
-                ? 'Đang giả lập phần cứng ESP32 (nhảy số 2 giây/lần)'
-                : 'Đang kết nối Live HiveMQ MQTT'}
+              {connection.esp32 === 'connected'
+                ? 'Đã kết nối với Wokwi ESP32'
+                : 'Sẵn sàng kết nối Wokwi khi Backend & HiveMQ online'}
             </Text>
           </View>
-          <Switch
-            value={isSimulation}
-            onValueChange={(val) => setSimulationMode(val)}
-            trackColor={{ false: theme.surfaceSubtle, true: theme.primary }}
-            thumbColor="#FFFFFF"
+          <View
+            style={[
+              styles.connectionIndicator,
+              { backgroundColor: connection.esp32 === 'connected' ? theme.success : theme.warning },
+            ]}
           />
         </View>
       </View>
@@ -122,7 +121,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ smartHome, theme
                 Tự động tưới cây khi đất khô
               </Text>
               <Text style={[styles.ruleDesc, { color: theme.textSecondary }]}>
-                Kích hoạt Rơ-le máy bơm khi độ ẩm đất &lt; {soilThreshold}%
+                Kích hoạt Rơ-le máy bơm (Pin 23) khi độ ẩm đất &lt; {soilThreshold}%
               </Text>
             </View>
             <Switch
@@ -169,7 +168,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ smartHome, theme
                 Tự động mở cửa ra vào
               </Text>
               <Text style={[styles.ruleDesc, { color: theme.textSecondary }]}>
-                Xoay Servo 90° khi HC-SR04 phát hiện vật cản &lt; {doorThreshold}cm
+                Xoay Servo (Pin 19) 90° khi HC-SR04 phát hiện vật cản &lt; {doorThreshold}cm
               </Text>
             </View>
             <Switch
@@ -271,7 +270,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ smartHome, theme
           activeOpacity={0.8}
         >
           <Text style={[styles.saveBtnText, { color: theme.textPrimary }]}>
-            Cập nhật & Kết nối lại
+            Cập nhật & Thử kết nối lại
           </Text>
         </TouchableOpacity>
       </View>
@@ -328,6 +327,11 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     fontSize: 12,
     marginTop: 2,
+  },
+  connectionIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   sectionTitle: {
     fontSize: 16,

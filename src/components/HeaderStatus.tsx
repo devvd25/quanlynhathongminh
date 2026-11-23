@@ -1,6 +1,6 @@
 /**
  * Component: HeaderStatus
- * Header giao diện Smart Home & Badge đồng bộ màn hình OLED mạch ESP32
+ * Header giao diện Smart Home & Badge đồng bộ màn hình OLED Wokwi ESP32
  * (WiFi: OK | MQTT: OK), hiển thị IP, Ping và nút Reconnect.
  */
 
@@ -8,46 +8,61 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { IotConnectionStatus } from '../types/iot';
+import { UserProfile } from '../types/auth';
 import { ThemeColors, Radii, Spacing } from '../constants/theme';
 
 interface HeaderStatusProps {
   connection: IotConnectionStatus;
+  user?: UserProfile | null;
   theme: ThemeColors;
   isDarkMode: boolean;
   isRefreshing: boolean;
   onReconnect: () => void;
   onToggleTheme: () => void;
+  onProfilePress?: () => void;
 }
 
 export const HeaderStatus: React.FC<HeaderStatusProps> = ({
   connection,
+  user,
   theme,
   isDarkMode,
   isRefreshing,
   onReconnect,
   onToggleTheme,
+  onProfilePress,
 }) => {
   const isEspConnected = connection.esp32 === 'connected';
   const isBrokerConnected = connection.broker === 'connected';
+  const isStandby = connection.esp32 === 'standby';
 
-  // Lời chào theo buổi trong ngày
   const currentHour = new Date().getHours();
   const greeting =
     currentHour < 12 ? 'Chào buổi sáng!' : currentHour < 18 ? 'Chào buổi chiều!' : 'Chào buổi tối!';
 
   return (
     <View style={styles.container}>
-      {/* Hàng 1: Tiêu đề, Lời chào & Nút điều khiển nhanh */}
+      {/* Hàng 1: Tiêu đề, Lời chào & Tên Người Dùng/Vai Trò */}
       <View style={styles.topRow}>
-        <View style={styles.greetingContainer}>
+        <TouchableOpacity style={styles.greetingContainer} onPress={onProfilePress} activeOpacity={0.8}>
           <View style={styles.titleWithIcon}>
-            <Text style={[styles.homeTitle, { color: theme.textPrimary }]}>Nhà của tôi</Text>
-            <Ionicons name="chevron-down" size={18} color={theme.textPrimary} style={{ marginLeft: 4 }} />
+            <Text style={[styles.homeTitle, { color: theme.textPrimary }]}>
+              {user?.homeName || 'Nhà của tôi'}
+            </Text>
+            {user?.role === 'admin' ? (
+              <View style={[styles.roleBadge, { backgroundColor: theme.primaryLight }]}>
+                <Text style={[styles.roleText, { color: theme.primary }]}>ADMIN</Text>
+              </View>
+            ) : (
+              <View style={[styles.roleBadge, { backgroundColor: theme.successLight }]}>
+                <Text style={[styles.roleText, { color: theme.success }]}>GIA CHỦ</Text>
+              </View>
+            )}
           </View>
           <Text style={[styles.greetingSubtitle, { color: theme.textSecondary }]}>
-            {greeting} Mọi thiết bị đang hoạt động ổn định.
+            {greeting} {user?.name ? user.name : 'Chào mừng bạn trở lại.'}
           </Text>
-        </View>
+        </TouchableOpacity>
 
         {/* Nút Đổi Theme & Nút Reconnect */}
         <View style={styles.actionsGroup}>
@@ -81,7 +96,7 @@ export const HeaderStatus: React.FC<HeaderStatusProps> = ({
         </View>
       </View>
 
-      {/* Hàng 2: Bảng trạng thái OLED System Sync (ESP32 WiFi + HiveMQ MQTT) */}
+      {/* Hàng 2: Bảng trạng thái OLED System Sync (ESP32 Wokwi + HiveMQ MQTT) */}
       <View
         style={[
           styles.oledSyncCard,
@@ -95,17 +110,29 @@ export const HeaderStatus: React.FC<HeaderStatusProps> = ({
         <View style={styles.oledHeader}>
           <View style={styles.hardwareBadge}>
             <MaterialCommunityIcons name="chip" size={16} color={theme.primary} />
-            <Text style={[styles.hardwareText, { color: theme.textPrimary }]}>ESP32 Hardware</Text>
+            <Text style={[styles.hardwareText, { color: theme.textPrimary }]}>
+              ESP32 Wokwi Simulator
+            </Text>
           </View>
           <View style={styles.pingBadge}>
             <View
               style={[
                 styles.dotIndicator,
-                { backgroundColor: isEspConnected && isBrokerConnected ? theme.success : theme.danger },
+                {
+                  backgroundColor: isEspConnected
+                    ? theme.success
+                    : isStandby
+                    ? theme.warning
+                    : theme.danger,
+                },
               ]}
             />
             <Text style={[styles.pingText, { color: theme.textSecondary }]}>
-              {connection.pingMs} ms • {connection.ipAddress}
+              {isStandby
+                ? 'Sẵn sàng kết nối'
+                : isEspConnected
+                ? `${connection.pingMs || 25} ms • Wokwi OK`
+                : 'Mất kết nối'}
             </Text>
           </View>
         </View>
@@ -114,18 +141,18 @@ export const HeaderStatus: React.FC<HeaderStatusProps> = ({
         <View style={[styles.oledScreenBox, { backgroundColor: isDarkMode ? '#050811' : '#0F172A' }]}>
           <View style={styles.oledLineItem}>
             <Ionicons
-              name={isEspConnected ? 'wifi' : 'wifi-outline'}
+              name="wifi"
               size={14}
-              color={isEspConnected ? '#10B981' : '#EF4444'}
+              color={isEspConnected ? '#10B981' : isStandby ? '#FBBF24' : '#EF4444'}
             />
             <Text style={styles.oledLabel}>WiFi:</Text>
             <Text
               style={[
                 styles.oledValue,
-                { color: isEspConnected ? '#34D399' : '#F87171' },
+                { color: isEspConnected ? '#34D399' : isStandby ? '#FBBF24' : '#F87171' },
               ]}
             >
-              {isEspConnected ? `OK (${connection.wifiRssi}dBm)` : 'DISCONNECTED'}
+              {isEspConnected ? 'Wokwi OK' : isStandby ? 'STANDBY' : 'OFFLINE'}
             </Text>
           </View>
 
@@ -135,16 +162,16 @@ export const HeaderStatus: React.FC<HeaderStatusProps> = ({
             <MaterialCommunityIcons
               name="cloud-sync-outline"
               size={14}
-              color={isBrokerConnected ? '#38BDF8' : '#EF4444'}
+              color={isBrokerConnected ? '#38BDF8' : '#FBBF24'}
             />
             <Text style={styles.oledLabel}>MQTT:</Text>
             <Text
               style={[
                 styles.oledValue,
-                { color: isBrokerConnected ? '#38BDF8' : '#F87171' },
+                { color: isBrokerConnected ? '#38BDF8' : '#FBBF24' },
               ]}
             >
-              {isBrokerConnected ? 'HiveMQ OK' : 'OFFLINE'}
+              {isBrokerConnected ? 'HiveMQ Sẵn sàng' : 'STANDBY'}
             </Text>
           </View>
         </View>
@@ -172,11 +199,22 @@ const styles = StyleSheet.create({
   titleWithIcon: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
   homeTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     letterSpacing: -0.5,
+  },
+  roleBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: Radii.full,
+  },
+  roleText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   greetingSubtitle: {
     fontSize: 13,

@@ -1,14 +1,14 @@
 /**
  * Component: SensorCards (Khu vực Giám sát Môi trường)
  * Thiết kế Grid 3 thẻ trực quan:
- * 1. Nhiệt độ phòng (DHT22): Cảnh báo màu đỏ/cam khi > 35°C
- * 2. Độ ẩm không khí (DHT22): Màu xanh dương dịu mát, chỉ số thoải mái
- * 3. Độ ẩm đất (Biến trở): Phần trăm + chữ cảnh báo "Khô - Cần tưới" / "Đủ ẩm"
+ * 1. Nhiệt độ phòng (DHT22): Hiển thị số đo thật hoặc "--" khi chờ kết nối Wokwi
+ * 2. Độ ẩm không khí (DHT22): Màu xanh dương dịu mát
+ * 3. Độ ẩm đất (Biến trở): Phần trăm hoặc chữ chờ kết nối
  */
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { EnvironmentSensors } from '../types/iot';
 import { ThemeColors, Radii, Spacing } from '../constants/theme';
 
@@ -20,33 +20,58 @@ interface SensorCardsProps {
 export const SensorCards: React.FC<SensorCardsProps> = ({ sensors, theme }) => {
   const { dht22, soil } = sensors;
 
+  const hasTemp = dht22.temperature !== null;
+  const hasHum = dht22.humidity !== null;
+  const hasSoil = soil.percentage !== null;
+
   // Tính toán màu sắc cảnh báo theo nhiệt độ DHT22
-  const isHighTemp = dht22.temperature > 35.0;
-  const isWarmTemp = dht22.temperature > 30.0 && !isHighTemp;
+  const isHighTemp = hasTemp && dht22.temperature! > 35.0;
+  const isWarmTemp = hasTemp && dht22.temperature! > 30.0 && !isHighTemp;
 
-  const tempColor = isHighTemp ? theme.danger : isWarmTemp ? theme.warning : theme.success;
-  const tempBg = isHighTemp ? theme.dangerLight : isWarmTemp ? theme.warningLight : theme.successLight;
+  const tempColor = !hasTemp
+    ? theme.textMuted
+    : isHighTemp
+    ? theme.danger
+    : isWarmTemp
+    ? theme.warning
+    : theme.success;
 
-  // Tính toán thanh tiến trình nhiệt độ (scale từ 15°C đến 45°C)
-  const tempProgress = Math.min(100, Math.max(0, ((dht22.temperature - 15) / (45 - 15)) * 100));
+  const tempBg = !hasTemp
+    ? theme.surfaceSubtle
+    : isHighTemp
+    ? theme.dangerLight
+    : isWarmTemp
+    ? theme.warningLight
+    : theme.successLight;
 
-  // Trạng thái độ ẩm đất
-  const isSoilDry = soil.status === 'dry';
-  const soilColor = isSoilDry ? theme.warning : theme.success;
-  const soilBg = isSoilDry ? theme.warningLight : theme.successLight;
+  // Thanh tiến trình
+  const tempProgress = hasTemp
+    ? Math.min(100, Math.max(0, ((dht22.temperature! - 15) / (45 - 15)) * 100))
+    : 0;
+
+  const isSoilDry = hasSoil && soil.status === 'dry';
+  const soilColor = !hasSoil ? theme.textMuted : isSoilDry ? theme.warning : theme.success;
+  const soilBg = !hasSoil ? theme.surfaceSubtle : isSoilDry ? theme.warningLight : theme.successLight;
 
   return (
     <View style={styles.container}>
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Cảm biến môi trường</Text>
         <View style={styles.realtimeBadge}>
-          <View style={[styles.pulseDot, { backgroundColor: theme.primary }]} />
-          <Text style={[styles.realtimeText, { color: theme.textSecondary }]}>Real-time (2s)</Text>
+          <View
+            style={[
+              styles.pulseDot,
+              { backgroundColor: sensors.isLive ? theme.success : theme.warning },
+            ]}
+          />
+          <Text style={[styles.realtimeText, { color: theme.textSecondary }]}>
+            {sensors.isLive ? 'Dữ liệu Wokwi Live' : 'Chờ kết nối Wokwi'}
+          </Text>
         </View>
       </View>
 
       <View style={styles.cardsRow}>
-        {/* CARD 1: NHIỆT ĐỘ PHÒNG (DHT22) */}
+        {/* CARD 1: NHIỆT ĐỘ PHÒNG (DHT22 - Pin 4) */}
         <View
           style={[
             styles.card,
@@ -66,10 +91,12 @@ export const SensorCards: React.FC<SensorCardsProps> = ({ sensors, theme }) => {
                 color={tempColor}
               />
             </View>
-            {isHighTemp && (
+            {isHighTemp ? (
               <View style={[styles.miniAlertPill, { backgroundColor: theme.dangerLight }]}>
                 <Text style={[styles.miniAlertText, { color: theme.danger }]}>NÓNG</Text>
               </View>
+            ) : (
+              <Text style={[styles.pinBadge, { color: theme.textMuted }]}>Pin 4</Text>
             )}
           </View>
 
@@ -77,7 +104,7 @@ export const SensorCards: React.FC<SensorCardsProps> = ({ sensors, theme }) => {
 
           <View style={styles.valueRow}>
             <Text style={[styles.mainValue, { color: tempColor }]}>
-              {dht22.temperature.toFixed(1)}
+              {hasTemp ? dht22.temperature!.toFixed(1) : '--.-'}
             </Text>
             <Text style={[styles.unitText, { color: tempColor }]}>°C</Text>
           </View>
@@ -93,7 +120,11 @@ export const SensorCards: React.FC<SensorCardsProps> = ({ sensors, theme }) => {
           </View>
 
           <Text style={[styles.subValueText, { color: theme.textMuted }]}>
-            {dht22.temperature > 35 ? 'Cảnh báo nhiệt cao' : 'DHT22 • Ổn định'}
+            {hasTemp
+              ? dht22.temperature! > 35
+                ? 'Cảnh báo nhiệt cao'
+                : 'DHT22 • Ổn định'
+              : 'Chờ ESP32 gửi tin'}
           </Text>
         </View>
 
@@ -112,33 +143,39 @@ export const SensorCards: React.FC<SensorCardsProps> = ({ sensors, theme }) => {
             <View style={[styles.iconBox, { backgroundColor: theme.infoLight }]}>
               <Ionicons name="water-outline" size={18} color={theme.info} />
             </View>
+            <Text style={[styles.pinBadge, { color: theme.textMuted }]}>Pin 4</Text>
           </View>
 
           <Text style={[styles.cardTitle, { color: theme.textSecondary }]}>Độ ẩm không khí</Text>
 
           <View style={styles.valueRow}>
             <Text style={[styles.mainValue, { color: theme.info }]}>
-              {dht22.humidity.toFixed(1)}
+              {hasHum ? dht22.humidity!.toFixed(1) : '--.-'}
             </Text>
             <Text style={[styles.unitText, { color: theme.info }]}>%</Text>
           </View>
 
-          {/* Mini progress bar */}
           <View style={[styles.progressBarTrack, { backgroundColor: theme.surfaceSubtle }]}>
             <View
               style={[
                 styles.progressBarFill,
-                { width: `${Math.min(100, dht22.humidity)}%`, backgroundColor: theme.info },
+                { width: `${hasHum ? Math.min(100, dht22.humidity!) : 0}%`, backgroundColor: theme.info },
               ]}
             />
           </View>
 
           <Text style={[styles.subValueText, { color: theme.textMuted }]}>
-            {dht22.humidity < 45 ? 'Hơi khô' : dht22.humidity > 70 ? 'Khá ẩm' : 'Lý tưởng'}
+            {hasHum
+              ? dht22.humidity! < 45
+                ? 'Hơi khô'
+                : dht22.humidity! > 70
+                ? 'Khá ẩm'
+                : 'Lý tưởng'
+              : 'Chờ ESP32 gửi tin'}
           </Text>
         </View>
 
-        {/* CARD 3: ĐỘ ẨM ĐẤT (BIẾN TRỞ ADC) */}
+        {/* CARD 3: ĐỘ ẨM ĐẤT (BIẾN TRỞ ADC - Pin 34) */}
         <View
           style={[
             styles.card,
@@ -158,28 +195,23 @@ export const SensorCards: React.FC<SensorCardsProps> = ({ sensors, theme }) => {
                 color={soilColor}
               />
             </View>
-            <View style={[styles.miniStatusBadge, { backgroundColor: soilBg }]}>
-              <Text style={[styles.miniStatusText, { color: soilColor }]} numberOfLines={1}>
-                {soil.status === 'dry' ? 'Khô' : 'Tốt'}
-              </Text>
-            </View>
+            <Text style={[styles.pinBadge, { color: theme.textMuted }]}>Pin 34</Text>
           </View>
 
           <Text style={[styles.cardTitle, { color: theme.textSecondary }]}>Độ ẩm đất</Text>
 
           <View style={styles.valueRow}>
             <Text style={[styles.mainValue, { color: soilColor }]}>
-              {soil.percentage}
+              {hasSoil ? soil.percentage : '--'}
             </Text>
             <Text style={[styles.unitText, { color: soilColor }]}>%</Text>
           </View>
 
-          {/* Mini progress bar */}
           <View style={[styles.progressBarTrack, { backgroundColor: theme.surfaceSubtle }]}>
             <View
               style={[
                 styles.progressBarFill,
-                { width: `${soil.percentage}%`, backgroundColor: soilColor },
+                { width: `${hasSoil ? soil.percentage! : 0}%`, backgroundColor: soilColor },
               ]}
             />
           </View>
@@ -255,6 +287,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  pinBadge: {
+    fontSize: 10,
+    fontFamily: 'monospace',
+    fontWeight: '600',
+  },
   miniAlertPill: {
     paddingHorizontal: 5,
     paddingVertical: 2,
@@ -263,15 +300,6 @@ const styles = StyleSheet.create({
   miniAlertText: {
     fontSize: 9,
     fontWeight: '800',
-  },
-  miniStatusBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: Radii.full,
-  },
-  miniStatusText: {
-    fontSize: 9,
-    fontWeight: '700',
   },
   cardTitle: {
     fontSize: 11,
@@ -285,7 +313,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   mainValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     letterSpacing: -0.5,
   },

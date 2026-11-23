@@ -5,7 +5,7 @@
  */
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSmartHome } from '../hooks/useSmartHome';
 import { ThemeColors, Radii, Spacing } from '../constants/theme';
@@ -15,19 +15,19 @@ interface AnalyticsScreenProps {
   theme: ThemeColors;
 }
 
-const { width } = Dimensions.get('window');
-
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ smartHome, theme }) => {
   const { history, sensors } = smartHome;
   const [selectedMetric, setSelectedMetric] = useState<'temp' | 'hum' | 'soil'>('temp');
 
+  const hasHistory = history.length > 0;
+
   // Tính toán số liệu thống kê từ buffer history
   const temps = history.map((p) => p.temperature);
-  const maxTemp = temps.length ? Math.max(...temps).toFixed(1) : '28.0';
-  const minTemp = temps.length ? Math.min(...temps).toFixed(1) : '24.0';
+  const maxTemp = temps.length ? Math.max(...temps).toFixed(1) : '--';
+  const minTemp = temps.length ? Math.min(...temps).toFixed(1) : '--';
   const avgTemp = temps.length
     ? (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1)
-    : '26.0';
+    : '--';
 
   const currentValues =
     selectedMetric === 'temp'
@@ -53,7 +53,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ smartHome, the
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.textPrimary }]}>Thống kê & Lịch sử</Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Dữ liệu đồng bộ từ ESP32 và sẵn sàng tích hợp Backend Database
+          Dữ liệu đồng bộ từ ESP32 Wokwi và sẵn sàng tích hợp Backend Database
         </Text>
       </View>
 
@@ -126,7 +126,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ smartHome, the
         </TouchableOpacity>
       </View>
 
-      {/* BIỂU ĐỒ TRỰC QUAN (Custom Line Chart Canvas/Bar Visualizer) */}
+      {/* BIỂU ĐỒ TRỰC QUAN */}
       <View
         style={[
           styles.chartCard,
@@ -143,58 +143,78 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ smartHome, the
                 : 'Biểu đồ Độ ẩm Đất (%)'}
             </Text>
             <Text style={[styles.chartLiveIndicator, { color: theme.textMuted }]}>
-              Cập nhật mỗi 2 giây • {history.length} điểm ghi nhận
+              {hasHistory
+                ? `Đã ghi nhận ${history.length} điểm dữ liệu Wokwi`
+                : 'Sẵn sàng hứng dữ liệu từ Backend / Wokwi'}
             </Text>
           </View>
           <Text style={[styles.chartCurrentValue, { color: metricColor }]}>
             {selectedMetric === 'temp'
-              ? `${sensors.dht22.temperature.toFixed(1)}°C`
+              ? sensors.dht22.temperature !== null
+                ? `${sensors.dht22.temperature.toFixed(1)}°C`
+                : '--.-°C'
               : selectedMetric === 'hum'
-              ? `${sensors.dht22.humidity.toFixed(1)}%`
-              : `${sensors.soil.percentage}%`}
+              ? sensors.dht22.humidity !== null
+                ? `${sensors.dht22.humidity.toFixed(1)}%`
+                : '--.-%'
+              : sensors.soil.percentage !== null
+              ? `${sensors.soil.percentage}%`
+              : '--%'}
           </Text>
         </View>
 
-        {/* Biểu đồ cột/vùng dạng Modern Wave Graphic */}
-        <View style={styles.chartArea}>
-          {history.map((pt, idx) => {
-            const val =
-              selectedMetric === 'temp'
-                ? pt.temperature
-                : selectedMetric === 'hum'
-                ? pt.humidity
-                : pt.soilMoisture;
-            const heightPercent = Math.min(100, Math.max(15, ((val - minValue) / range) * 100));
+        {/* Biểu đồ cột/vùng dạng Modern Graphic */}
+        {hasHistory ? (
+          <View style={styles.chartArea}>
+            {history.map((pt, idx) => {
+              const val =
+                selectedMetric === 'temp'
+                  ? pt.temperature
+                  : selectedMetric === 'hum'
+                  ? pt.humidity
+                  : pt.soilMoisture;
+              const heightPercent = Math.min(100, Math.max(15, ((val - minValue) / range) * 100));
 
-            return (
-              <View key={idx} style={styles.barCol}>
-                <View style={styles.barTrack}>
-                  <View
-                    style={[
-                      styles.barFill,
-                      {
-                        height: `${heightPercent}%`,
-                        backgroundColor: metricColor,
-                        opacity: 0.35 + (idx / history.length) * 0.65,
-                      },
-                    ]}
-                  />
+              return (
+                <View key={idx} style={styles.barCol}>
+                  <View style={styles.barTrack}>
+                    <View
+                      style={[
+                        styles.barFill,
+                        {
+                          height: `${heightPercent}%`,
+                          backgroundColor: metricColor,
+                          opacity: 0.35 + (idx / history.length) * 0.65,
+                        },
+                      ]}
+                    />
+                  </View>
+                  {idx % 4 === 0 && (
+                    <Text style={[styles.timeTick, { color: theme.textMuted }]}>
+                      {pt.timeLabel.substring(0, 5)}
+                    </Text>
+                  )}
                 </View>
-                {idx % 4 === 0 && (
-                  <Text style={[styles.timeTick, { color: theme.textMuted }]}>
-                    {pt.timeLabel.substring(0, 5)}
-                  </Text>
-                )}
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={[styles.emptyChartBox, { backgroundColor: theme.surfaceSubtle }]}>
+            <MaterialCommunityIcons name="chart-bell-curve" size={36} color={theme.textMuted} />
+            <Text style={[styles.emptyChartTitle, { color: theme.textPrimary }]}>
+              Sẵn sàng kết nối Wokwi & Backend
+            </Text>
+            <Text style={[styles.emptyChartDesc, { color: theme.textSecondary }]}>
+              Biểu đồ thời gian thực sẽ tự động vẽ ngay khi ESP32 trên Wokwi hoặc Backend bắt đầu gửi dữ liệu cảm biến.
+            </Text>
+          </View>
+        )}
 
         {/* Chú thích Backend */}
         <View style={[styles.backendNote, { backgroundColor: theme.surfaceSubtle }]}>
           <MaterialCommunityIcons name="database-arrow-down-outline" size={16} color={theme.primary} />
           <Text style={[styles.backendNoteText, { color: theme.textSecondary }]}>
-            REST API Endpoint: GET /api/v1/sensors/history?range=24h
+            API: GET /api/v1/telemetry/history?range=24h (FastAPI / Node.js)
           </Text>
         </View>
       </View>
@@ -211,7 +231,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ smartHome, the
             <Ionicons name="arrow-up" size={16} color={theme.danger} />
           </View>
           <Text style={[styles.statValue, { color: theme.textPrimary }]}>{maxTemp} °C</Text>
-          <Text style={[styles.statLabel, { color: theme.textMuted }]}>Cao nhất hôm nay</Text>
+          <Text style={[styles.statLabel, { color: theme.textMuted }]}>Cao nhất</Text>
         </View>
 
         <View
@@ -224,7 +244,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ smartHome, the
             <Ionicons name="arrow-down" size={16} color={theme.info} />
           </View>
           <Text style={[styles.statValue, { color: theme.textPrimary }]}>{minTemp} °C</Text>
-          <Text style={[styles.statLabel, { color: theme.textMuted }]}>Thấp nhất hôm nay</Text>
+          <Text style={[styles.statLabel, { color: theme.textMuted }]}>Thấp nhất</Text>
         </View>
 
         <View
@@ -237,7 +257,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ smartHome, the
             <Ionicons name="stats-chart" size={16} color={theme.success} />
           </View>
           <Text style={[styles.statValue, { color: theme.textPrimary }]}>{avgTemp} °C</Text>
-          <Text style={[styles.statLabel, { color: theme.textMuted }]}>Nhiệt độ trung bình</Text>
+          <Text style={[styles.statLabel, { color: theme.textMuted }]}>Trung bình</Text>
         </View>
       </View>
     </ScrollView>
@@ -337,6 +357,24 @@ const styles = StyleSheet.create({
     fontSize: 9,
     position: 'absolute',
     bottom: -18,
+  },
+  emptyChartBox: {
+    height: 140,
+    borderRadius: Radii.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
+  emptyChartTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  emptyChartDesc: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 16,
   },
   backendNote: {
     flexDirection: 'row',

@@ -1,7 +1,8 @@
 /**
  * Component: BottomTabBar
- * Thanh điều hướng dưới cùng phong cách Modern Smart Home (như ảnh mẫu)
- * Hỗ trợ 3 Tab: Thiết bị (Dashboard), Thống kê (Analytics), Cài đặt (Settings)
+ * Thanh điều hướng dưới cùng tự động thay đổi theo vai trò:
+ * - Gia chủ (User): [Thiết bị, Thống kê, Tài khoản]
+ * - Quản trị (Admin): [Thiết bị, Thống kê, Quản trị, Tài khoản]
  */
 
 import React from 'react';
@@ -9,20 +10,41 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ThemeColors, Radii, Spacing } from '../constants/theme';
 
-export type TabKey = 'dashboard' | 'analytics' | 'settings';
+export type TabKey = 'dashboard' | 'analytics' | 'admin' | 'profile';
 
 interface BottomTabBarProps {
   currentTab: TabKey;
   onTabChange: (tab: TabKey) => void;
+  isAdmin: boolean;
   theme: ThemeColors;
 }
 
-export const BottomTabBar: React.FC<BottomTabBarProps> = ({ currentTab, onTabChange, theme }) => {
-  const tabs: { key: TabKey; label: string; icon: string; iconFamily: 'ion' | 'material' }[] = [
+export const BottomTabBar: React.FC<BottomTabBarProps> = ({
+  currentTab,
+  onTabChange,
+  isAdmin,
+  theme,
+}) => {
+  const baseTabs: { key: TabKey; label: string; icon: string; iconFamily: 'ion' | 'material' }[] = [
     { key: 'dashboard', label: 'Thiết bị', icon: 'home-outline', iconFamily: 'ion' },
     { key: 'analytics', label: 'Thống kê', icon: 'chart-line', iconFamily: 'material' },
-    { key: 'settings', label: 'Cài đặt', icon: 'tune-vertical', iconFamily: 'material' },
   ];
+
+  if (isAdmin) {
+    baseTabs.push({
+      key: 'admin',
+      label: 'Quản trị',
+      icon: 'shield-crown-outline',
+      iconFamily: 'material',
+    });
+  }
+
+  baseTabs.push({
+    key: 'profile',
+    label: 'Tài khoản',
+    icon: 'person-outline',
+    iconFamily: 'ion',
+  });
 
   return (
     <View
@@ -35,7 +57,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({ currentTab, onTabCha
         },
       ]}
     >
-      {tabs.map((tab) => {
+      {baseTabs.map((tab) => {
         const isActive = currentTab === tab.key;
         return (
           <TouchableOpacity
@@ -98,7 +120,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
   },
   iconContainer: {
     alignItems: 'center',
